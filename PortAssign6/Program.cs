@@ -1,8 +1,6 @@
 ﻿﻿using System.Collections.Immutable;
 using System.Text;
 using ClosedXML.Excel;
-//using ClosedXML.Graphics;
-//using DocumentFormat.OpenXml.Wordprocessing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -97,6 +95,8 @@ public class PortAssignApp : ConsoleAppBase
         int propertyDataRow = config.Value.PropertyDataRow;
         string propertySheetName = config.Value.PropertySheetName;
         string propertyWordKeyToColum = config.Value.PropertyWordKeyToColum;
+        string saveWordFromColum = config.Value.SaveWordFromColum;
+        string saveWordToColum = config.Value.SaveWordToColum;
 
         readDefinitionExcel(definition, definitionSheetName, definitionDataRow, definitionWordKeyToColum, dicMyAssignDevice);
         printMyAssigeDevice(dicMyAssignDevice);
@@ -111,7 +111,7 @@ public class PortAssignApp : ConsoleAppBase
         assignDevice(dicMyAssignDevice, dicMySw);
         printMySw(dicMySw);
 
-        saveMyAssignDevice(save, dicMySw);
+        saveMyAssignDevice(save, saveWordFromColum, saveWordToColum, dicMySw);
 
 //== finish
         if (isAllPass)
@@ -287,6 +287,27 @@ public class PortAssignApp : ConsoleAppBase
         logger.ZLogInformation($"== start デバイス情報のアップデート ==");
         bool isError = false;
 
+        Dictionary<string, List<string>> dicRosette = new Dictionary<string, List<string>>();
+        int count = 1;
+        foreach (var propKey in dicMyProperty.Keys)
+        {
+            string rosette = dicMyProperty[propKey].rosette;
+            if (!rosette.Equals(""))
+            {
+                if (dicRosette.Keys.Contains(rosette))
+                {
+                    dicRosette[rosette].Add(dicMyProperty[propKey].deviceNumber);
+                }
+                else
+                {
+                    List<string> listRosette = new List<string>();
+                    listRosette.Add(dicMyProperty[propKey].deviceNumber);
+                    dicRosette.Add(rosette, listRosette);
+                }
+            }
+            count++;
+        }
+
         foreach (var key in dicMyAssignDevice.Keys)
         {
             var assignDevice = dicMyAssignDevice[key];
@@ -311,6 +332,16 @@ public class PortAssignApp : ConsoleAppBase
                     de.portName = device.portName;
                     de.cableName = device.cableName;
                     de.connectorName = device.connectorName;
+                    if (dicRosette.Keys.Contains(device.rosette))
+                    {
+                        var rosetteIndex = dicRosette[device.rosette].IndexOf(device.deviceNumber) + 1;
+                        de.hostName = string.Format("{0:G}{1:00}", device.rosette, rosetteIndex);
+                        logger.ZLogTrace($"[rosette] deviceNumber:{device.deviceNumber},rosette:{de.hostName}");
+                    }
+                    else
+                    {
+                        de.hostName = device.hostName;
+                    }
                 }
                 else
                 {
@@ -507,18 +538,32 @@ public class PortAssignApp : ConsoleAppBase
         logger.ZLogInformation($"== end デバイスの重複の確認 ==");
     }
 
-    private void saveMyAssignDevice(string save, Dictionary<string, List<MySw>> dic)
+    private void saveMyAssignDevice(string save, string saveWordFromColum, string saveWordToColum, Dictionary<string, List<MySw>> dic)
     {
         logger.ZLogInformation($"== start ファイルの新規作成 ==");
         bool isError = false;
+        Dictionary<int, MySaveFile> dicWordFromColum = new Dictionary<int, MySaveFile>();
+        foreach (var keyAndValue in saveWordFromColum.Split(','))
+        {
+            string[] item = keyAndValue.Split('/');
+            MySaveFile file = new MySaveFile();
+            file.column = int.Parse(item[0]);
+            file.property = item[1];
+            file.name = item[2];
+            dicWordFromColum.Add(file.column, file);
+        }
+        Dictionary<int, MySaveFile> dicWordToColum = new Dictionary<int, MySaveFile>();
+        foreach (var keyAndValue in saveWordToColum.Split(','))
+        {
+            string[] item = keyAndValue.Split('/');
+            MySaveFile file = new MySaveFile();
+            file.column = int.Parse(item[0]);
+            file.property = item[1];
+            file.name = item[2];
+            dicWordToColum.Add(file.column, file);
+        }
 
         const int SAVE_COLUMN_DATETIME = 1;
-        const int SAVE_COLUMN_PORTNUMBER = 1;
-        const int SAVE_COLUMN_FLOOR = 3;
-        const int SAVE_COLUMN_RACKNAME = 4;
-        const int SAVE_COLUMN_ROOMNAME = 5;
-        const int SAVE_COLUMN_DEVICENAME = 6;
-        const int SAVE_COLUMN_DEVICENUMBER = 7;
         const int SAVE_FIRST_ROW_DATETIME = 1;
         const int SAVE_FIRST_ROW_HEADER = 3;
         const int SAVE_FIRST_ROW_DATA = SAVE_FIRST_ROW_HEADER + 1;
@@ -530,33 +575,48 @@ public class PortAssignApp : ConsoleAppBase
             {
                 var worksheet = workbook.AddWorksheet(sw.sw.deviceNumber);
 
-                worksheet.Cell(SAVE_FIRST_ROW_DATETIME, SAVE_COLUMN_DATETIME).SetValue(convertDateTimeToJst(DateTime.Now)).Style.Font.SetFontName("Meiryo UI");
+                worksheet.Cell(SAVE_FIRST_ROW_DATETIME, SAVE_COLUMN_DATETIME).SetValue(convertDateTimeToJst(DateTime.Now));
 
-                worksheet.Cell(SAVE_FIRST_ROW_HEADER, SAVE_COLUMN_FLOOR).SetValue("階数").Style.Font.SetFontName("Meiryo UI");
-                worksheet.Cell(SAVE_FIRST_ROW_HEADER, SAVE_COLUMN_RACKNAME).SetValue("ラック").Style.Font.SetFontName("Meiryo UI");
-                worksheet.Cell(SAVE_FIRST_ROW_HEADER, SAVE_COLUMN_ROOMNAME).SetValue("部屋").Style.Font.SetFontName("Meiryo UI");
-                worksheet.Cell(SAVE_FIRST_ROW_HEADER, SAVE_COLUMN_DEVICENAME).SetValue("デバイス").Style.Font.SetFontName("Meiryo UI");
-                worksheet.Cell(SAVE_FIRST_ROW_HEADER, SAVE_COLUMN_DEVICENUMBER).SetValue("識別名").Style.Font.SetFontName("Meiryo UI");
-                worksheet.Cell(SAVE_FIRST_ROW_HEADER, SAVE_COLUMN_PORTNUMBER).SetValue("ポート番号").Style.Font.SetFontName("Meiryo UI");
+                // FROM
+                foreach (var excelkey in dicWordFromColum.Keys)
+                {
+                    worksheet.Cell(SAVE_FIRST_ROW_HEADER, dicWordFromColum[excelkey].column).SetValue(dicWordFromColum[excelkey].name);
+                }
+                // TO
+                foreach (var excelkey in dicWordToColum.Keys)
+                {
+                    worksheet.Cell(SAVE_FIRST_ROW_HEADER, dicWordToColum[excelkey].column).SetValue(dicWordToColum[excelkey].name);
+                }
 
                 int row = SAVE_FIRST_ROW_DATA;
                 for (int i = 0; i < sw.ports.Length; i++)
                 {
-                    worksheet.Cell(row, SAVE_COLUMN_FLOOR).SetValue(sw.ports[i].floor).Style.Font.SetFontName("Meiryo UI");
-                    worksheet.Cell(row, SAVE_COLUMN_RACKNAME).SetValue(sw.ports[i].rackName).Style.Font.SetFontName("Meiryo UI");
-                    worksheet.Cell(row, SAVE_COLUMN_ROOMNAME).SetValue(sw.ports[i].roomName).Style.Font.SetFontName("Meiryo UI");
-                    worksheet.Cell(row, SAVE_COLUMN_DEVICENAME).SetValue(sw.ports[i].deviceName).Style.Font.SetFontName("Meiryo UI");
-                    worksheet.Cell(row, SAVE_COLUMN_DEVICENUMBER).SetValue(sw.ports[i].deviceNumber).Style.Font.SetFontName("Meiryo UI");
-                    worksheet.Cell(row, SAVE_COLUMN_PORTNUMBER).SetValue(i + 1).Style.Font.SetFontName("Meiryo UI");
+                    // FROM
+                    MyDevice swde = sw.sw;
+                    foreach (var excelkey in dicWordFromColum.Keys)
+                    {
+//                        worksheet.Cell(row, dicWordFromColum[excelkey].column).SetValue(dicWordFromColum[excelkey].property);
+                        var property = typeof(MyDevice).GetProperty(dicWordFromColum[excelkey].property);
+                        worksheet.Cell(row, dicWordFromColum[excelkey].column).SetValue(property.GetValue(swde).ToString());
+                    }
+
+                    // TO
+                    MyDevice de = sw.ports[i];
+                    foreach (var excelkey in dicWordToColum.Keys)
+                    {
+                        var property = typeof(MyDevice).GetProperty(dicWordToColum[excelkey].property);
+                        worksheet.Cell(row, dicWordToColum[excelkey].column).SetValue(property.GetValue(de).ToString());
+                    }
                     row++;
                 }
 
-                worksheet.Column(SAVE_COLUMN_DEVICENUMBER).AdjustToContents();
-                worksheet.Column(SAVE_COLUMN_RACKNAME).AdjustToContents();
-                worksheet.Column(SAVE_COLUMN_ROOMNAME).AdjustToContents();
-                worksheet.Column(SAVE_COLUMN_DEVICENAME).AdjustToContents();
-                worksheet.Column(SAVE_COLUMN_DEVICENUMBER).AdjustToContents();
-                worksheet.Column(SAVE_COLUMN_PORTNUMBER).AdjustToContents();
+                for (int column = 0; column < worksheet.LastColumnUsed().ColumnNumber(); column++)
+                {
+                    worksheet.Column(column + 1).Style.Font.SetFontSize(10);
+                    worksheet.Column(column + 1).Style.Font.SetFontName("Meiryo UI");
+                    worksheet.Column(column + 1).Width = 6;
+//                    worksheet.Column(column + 1).AdjustToContents().Style.Font.SetFontName("Meiryo UI");
+                }
             }
             workbook.SaveAs(save);
         }
@@ -685,7 +745,7 @@ public class PortAssignApp : ConsoleAppBase
         logger.ZLogTrace($"== start print ==");
         foreach (var de in dic.Values)
         {
-            logger.ZLogTrace($"識別子:{de.deviceNumber},階数:{de.floor},ラック:{de.rackName},部屋名:{de.roomName},デバイス名:{de.deviceName},モデル名:{de.modelName},port:{de.portName},種別:{de.cableName},コネクタ:{de.connectorName}");
+            logger.ZLogTrace($"識別子:{de.deviceNumber},階数:{de.floor},ラック:{de.rackName},部屋名:{de.roomName},デバイス名:{de.deviceName},モデル名:{de.modelName},port:{de.portName},種別:{de.cableName},コネクタ:{de.connectorName},ローゼット:{de.rosette}");
         }
         logger.ZLogTrace($"== end print ==");
     }
@@ -726,8 +786,16 @@ public class MyConfig
     public int PropertyDataRow {get; set;} = -1;
     public string PropertySheetName {get; set;} = "";
     public string PropertyWordKeyToColum {get; set;} = "";
+    public string SaveWordFromColum {get; set;} = "";
+    public string SaveWordToColum {get; set;} = "";
 }
 
+public class MySaveFile
+{
+    public string property { set; get; } = "";
+    public int column { set; get; } = -1;
+    public string name { set; get; } = "";
+}
 
 public class MySw
 {
@@ -748,6 +816,7 @@ public class MyDevice
     public string portName { set; get; } = "";
     public string cableName { set; get; } = "";
     public string connectorName { set; get; } = "";
+    public string rosette { set; get; } = "";
 }
 public class MyAssignDevice
 {

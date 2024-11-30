@@ -5,10 +5,10 @@
     <TargetFramework>net6.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <AssemblyInformationalVersion>0.0.1</AssemblyInformationalVersion>
-    <AssemblyVersion>0.0.1</AssemblyVersion>
-    <InformationalVersion>0.0.1</InformationalVersion>
-    <FileVersion>0.0.1</FileVersion>
+    <AssemblyInformationalVersion>0.0.2</AssemblyInformationalVersion>
+    <AssemblyVersion>0.0.2</AssemblyVersion>
+    <InformationalVersion>0.0.2</InformationalVersion>
+    <FileVersion>0.0.2</FileVersion>
   </PropertyGroup>
 
   <ItemGroup>
