@@ -95,6 +95,7 @@ public class PortAssignApp : ConsoleAppBase
         int propertyDataRow = config.Value.PropertyDataRow;
         string propertySheetName = config.Value.PropertySheetName;
         string propertyWordKeyToColum = config.Value.PropertyWordKeyToColum;
+        string swWordPortNumber = config.Value.SwWordPortNumber;
         string saveWordFromColum = config.Value.SaveWordFromColum;
         string saveWordToColum = config.Value.SaveWordToColum;
 
@@ -109,6 +110,7 @@ public class PortAssignApp : ConsoleAppBase
         updateDevicePropery(dicMyAssignDevice, dicMyProperty);
 
         assignDevice(dicMyAssignDevice, dicMySw);
+        updateSwPortNumber(dicMySw, swWordPortNumber);
         printMySw(dicMySw);
 
         saveMyAssignDevice(save, saveWordFromColum, saveWordToColum, dicMySw);
@@ -282,6 +284,43 @@ public class PortAssignApp : ConsoleAppBase
         logger.ZLogInformation($"== end Propertyファイルの読み込み ==");
     }
 
+    private void updateSwPortNumber(Dictionary<string, List<MySw>> dicMySw, string portValues)
+    {
+        logger.ZLogInformation($"== start スイッチのポート番号のアップデート ==");
+        bool isError = false;
+        string[] port = portValues.Split(',');
+        foreach (var key in dicMySw.Keys)
+        {
+            var listSw = dicMySw[key];
+            foreach (var sw in listSw)
+            {
+                if (sw.swPortName.Length == port.Length)
+                {
+                    for (int i = 0; i < sw.swPortName.Length; i++)
+                    {
+                        sw.swPortName[i] = port[i];
+                    }
+                }
+                else
+                {
+                    isError = true;
+                    logger.ZLogError($"[NG] ポート数[{sw.swPortName.Length}]と設定ファイル(SwWordPortNumber)[{port.Length}]の数が不一致でした ");
+                }
+            }
+        }
+
+        if (!isError)
+        {
+            logger.ZLogInformation($"[OK] スイッチのポート番号のアップデートは正常に処理できました");
+        }
+        else
+        {
+            isAllPass = false;
+            logger.ZLogError($"[NG] スイッチのポート番号のアップデートでエラーが発生しました");
+        }
+        logger.ZLogInformation($"== end スイッチのポート番号のアップデート ==");
+    }
+
     private void updateDevicePropery(Dictionary<string, MyAssignDevice> dicMyAssignDevice, Dictionary<string, MyDevice> dicMyProperty)
     {
         logger.ZLogInformation($"== start デバイス情報のアップデート ==");
@@ -382,7 +421,7 @@ public class PortAssignApp : ConsoleAppBase
             var countDevice = listDevice.Count;
             var countAssign = countAp + countDevice;
             var countMaxPort = countSW * 12;
-//            logger.ZLogDebug($"assignDevice() key:{key}, countSW:{countSW}, countDevice:{countAssign}");
+            logger.ZLogDebug($"assignDevice() key:{key}, countSW:{countSW}, countDevice:{countAssign}");
 
             if (countMaxPort >= countAssign)
             {
@@ -406,7 +445,7 @@ public class PortAssignApp : ConsoleAppBase
                     calcAssignDescending(countSW, i + 1, out int targetPort, out int targetSwNumber);
                     listMySw[targetSwNumber - 1].ports[targetPort - 1] = listDevice[i];
                 }
-                dicMySw.Add(assignDevice.rackName, listMySw);
+                dicMySw.Add(assignDevice.groupKey, listMySw);
             }
             else
             {
@@ -441,49 +480,49 @@ public class PortAssignApp : ConsoleAppBase
                 {
                     if (!item.deviceNumber.Equals("zero"))
                     {
-                        dicCheck.Add(item.deviceNumber, ad.floor);
+                        dicCheck.Add(item.deviceNumber, ad.groupKey);
                     }
                 }
                 foreach (var item in ad.ap)
                 {
                     if (!item.deviceNumber.Equals("zero"))
                     {
-                        dicCheck.Add(item.deviceNumber, ad.floor);
+                        dicCheck.Add(item.deviceNumber, ad.groupKey);
                     }
                 }
                 foreach (var item in ad.printer)
                 {
                     if (!item.deviceNumber.Equals("zero"))
                     {
-                        dicCheck.Add(item.deviceNumber, ad.floor);
+                        dicCheck.Add(item.deviceNumber, ad.groupKey);
                     }
                 }
                 foreach (var item in ad.mfp)
                 {
                     if (!item.deviceNumber.Equals("zero"))
                     {
-                        dicCheck.Add(item.deviceNumber, ad.floor);
+                        dicCheck.Add(item.deviceNumber, ad.groupKey);
                     }
                 }
                 foreach (var item in ad.ocr)
                 {
                     if (!item.deviceNumber.Equals("zero"))
                     {
-                        dicCheck.Add(item.deviceNumber, ad.floor);
+                        dicCheck.Add(item.deviceNumber, ad.groupKey);
                     }
                 }
                 foreach (var item in ad.other)
                 {
                     if (!item.deviceNumber.Equals("zero"))
                     {
-                        dicCheck.Add(item.deviceNumber, ad.floor);
+                        dicCheck.Add(item.deviceNumber, ad.groupKey);
                     }
                 }
             }
             catch (System.ArgumentException)
             {
                 isError = true;
-                logger.ZLogError($"重複エラー 階数:{ad.floor},ラック:{ad.rackName}");
+                logger.ZLogError($"重複エラー 階数:{ad.groupKey}");
             }
             catch (System.Exception)
             {
@@ -595,9 +634,17 @@ public class PortAssignApp : ConsoleAppBase
                     MyDevice swde = sw.sw;
                     foreach (var excelkey in dicWordFromColum.Keys)
                     {
-//                        worksheet.Cell(row, dicWordFromColum[excelkey].column).SetValue(dicWordFromColum[excelkey].property);
-                        var property = typeof(MyDevice).GetProperty(dicWordFromColum[excelkey].property);
-                        worksheet.Cell(row, dicWordFromColum[excelkey].column).SetValue(property.GetValue(swde).ToString());
+                        var prop = dicWordFromColum[excelkey].property;
+                        if (prop.Equals("portName"))
+                        {
+                            worksheet.Cell(row, dicWordFromColum[excelkey].column).SetValue(sw.swPortName[i]);
+                        }
+                        else
+                        {
+//                            var property = typeof(MyDevice).GetProperty(dicWordFromColum[excelkey].property);
+                            var property = typeof(MyDevice).GetProperty(prop);
+                            worksheet.Cell(row, dicWordFromColum[excelkey].column).SetValue(property.GetValue(swde).ToString());
+                        }
                     }
 
                     // TO
@@ -735,7 +782,7 @@ public class PortAssignApp : ConsoleAppBase
         logger.ZLogTrace($"== start print ==");
         foreach (var ad in dic.Values.ToList())
         {
-            logger.ZLogTrace($"キー:{ad.groupKey},階数:{ad.floor},ラック:{ad.rackName},SW:{convertMyDevice(ad.sw)},AP:{convertMyDevice(ad.ap)},PR:{convertMyDevice(ad.printer)},MFP:{convertMyDevice(ad.mfp)},OCR:{convertMyDevice(ad.ocr)},Other:{convertMyDevice(ad.other)}");
+            logger.ZLogTrace($"キー:{ad.groupKey},SW:{convertMyDevice(ad.sw)},AP:{convertMyDevice(ad.ap)},PR:{convertMyDevice(ad.printer)},MFP:{convertMyDevice(ad.mfp)},OCR:{convertMyDevice(ad.ocr)},Other:{convertMyDevice(ad.other)}");
         }
         logger.ZLogTrace($"== end print ==");
     }
@@ -786,6 +833,7 @@ public class MyConfig
     public int PropertyDataRow {get; set;} = -1;
     public string PropertySheetName {get; set;} = "";
     public string PropertyWordKeyToColum {get; set;} = "";
+    public string SwWordPortNumber {get; set;} = "";
     public string SaveWordFromColum {get; set;} = "";
     public string SaveWordToColum {get; set;} = "";
 }
@@ -801,6 +849,7 @@ public class MySw
 {
     public int id { set; get; } = -1;
     public MyDevice sw { set; get; } = new MyDevice();
+    public string[] swPortName { set; get; } = {"","","","","","","","","","","",""};
     public MyDevice[] ports { set; get; } = {new MyDevice(),new MyDevice(),new MyDevice(),new MyDevice(),new MyDevice(),new MyDevice()
                                             ,new MyDevice(),new MyDevice(),new MyDevice(),new MyDevice(),new MyDevice(),new MyDevice() };
 }
@@ -821,8 +870,6 @@ public class MyDevice
 public class MyAssignDevice
 {
     public string groupKey { set; get; } = "";
-    public string floor { set; get; } = "";
-    public string rackName { set; get; } = "";
     public List<MyDevice> sw { set; get; } = new List<MyDevice>();
     public List<MyDevice> ap { set; get; } = new List<MyDevice>();
     public List<MyDevice> printer { set; get; } = new List<MyDevice>();
